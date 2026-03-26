@@ -1,0 +1,30 @@
+# MediaMTX Configuration for Huchu ERP
+logLevel: info
+logDestinations: [stdout, file]
+logFile: C:\cctv-server\mediamtx.log
+
+# API for ERP Integration
+api: yes
+apiAddress: :9997
+
+# RTSP Server (Internal relay source for FFmpeg)
+rtsp: yes
+rtspAddress: :8554
+
+# WebRTC Server (For Browser View)
+webrtcDisable: no
+webrtcAddress: :8889
+
+hlsAddress: :8887
+
+pathDefaults:
+  runOnReady: C:/cctv-server/forward.bat
+  runOnReadyRestart: yes
+
+# Path configuration for Hikvision NVRs
+paths:
+  all:
+    # Use the dynamic source pattern for Hikvision
+    # Format: rtsp://user:pass@nvr_ip:554/Streaming/channels/101
+    sourceOnDemandStartTimeout: 10s
+    sourceOnDemandCloseAfter: 10s

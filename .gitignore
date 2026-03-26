@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.env
+mediamtx.exe
+nssm.exe
+forward-to-relay.log
