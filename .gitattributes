@@ -1,0 +1,2 @@
+mediamtx.exe filter=lfs diff=lfs merge=lfs -text
+nssm.exe filter=lfs diff=lfs merge=lfs -text
