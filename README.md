@@ -83,6 +83,16 @@ Remove services:
 .\scripts\remove-services.ps1
 ```
 
+Restart services:
+```powershell
+.\scripts\restart-services.ps1
+```
+
+Check FFmpeg relay compatibility:
+```powershell
+.\scripts\check-ffmpeg-compat.ps1
+```
+
 Manual gateway run:
 ```powershell
 .\run-gateway.cmd
@@ -155,6 +165,7 @@ When moving to a dedicated Windows box:
 3. Make sure `ffmpeg.exe` is on `PATH` or set `FFMPEG_PATH` in `.env`.
 4. Set `ERP_URL` and `GATEWAY_KEY` in `.env`.
 5. Run [`bootstrap.ps1`](C:/cctv-server/scripts/bootstrap.ps1) as Administrator.
+6. Run [`check-ffmpeg-compat.ps1`](C:/cctv-server/scripts/check-ffmpeg-compat.ps1) to confirm the relay can encode H.264/AAC.
 6. Confirm:
    - `http://127.0.0.1:8888/health`
    - `http://127.0.0.1:8889/`
