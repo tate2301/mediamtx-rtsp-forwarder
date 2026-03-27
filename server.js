@@ -268,6 +268,34 @@ async function fetchLiveSnapshotConfig(cameraId, token) {
   return response.data.snapshotConfig;
 }
 
+async function fetchOverviewRtspUrl(nvrId, token) {
+  const response = await axios.post(
+    `${ERP_URL}/api/cctv/overview-stream/config`,
+    { nvrId, token },
+    {
+      headers: {
+        "x-gateway-key": GATEWAY_KEY,
+      },
+    },
+  );
+
+  return response.data.rtspUrl;
+}
+
+async function fetchOverviewSnapshotConfig(nvrId, token) {
+  const response = await axios.post(
+    `${ERP_URL}/api/cctv/overview-stream/config`,
+    { nvrId, token },
+    {
+      headers: {
+        "x-gateway-key": GATEWAY_KEY,
+      },
+    },
+  );
+
+  return response.data.snapshotConfig;
+}
+
 async function fetchPlaybackRtspUrl(playbackRecordId, token) {
   const response = await axios.post(
     `${ERP_URL}/api/cctv/playback/config`,
@@ -349,6 +377,12 @@ async function resolveStreamPathRtspUrl(streamPath, query) {
       playbackSessionId: query.playbackSessionId,
       seekAt: query.seekAt,
     });
+  }
+
+  const overviewMatch = streamPath.match(/^overview-(.+)$/);
+  if (overviewMatch) {
+    const [, nvrId] = overviewMatch;
+    return fetchOverviewRtspUrl(nvrId, query.token);
   }
 
   const match = streamPath.match(/^camera-(.+)-(main|sub|third)$/);
@@ -485,13 +519,21 @@ app.get("/snapshot/:streamPath", async (req, res) => {
       return res.status(401).send("Token Required");
     }
 
-    const match = streamPath.match(/^camera-(.+)-(main|sub|third)$/);
-    if (!match) {
-      return res.status(400).send("Invalid path");
+    let snapshotConfig = null;
+    const overviewMatch = streamPath.match(/^overview-(.+)$/);
+    if (overviewMatch) {
+      const [, nvrId] = overviewMatch;
+      snapshotConfig = await fetchOverviewSnapshotConfig(nvrId, token);
+    } else {
+      const match = streamPath.match(/^camera-(.+)-(main|sub|third)$/);
+      if (!match) {
+        return res.status(400).send("Invalid path");
+      }
+
+      const [, cameraId] = match;
+      snapshotConfig = await fetchLiveSnapshotConfig(cameraId, token);
     }
 
-    const [, cameraId] = match;
-    const snapshotConfig = await fetchLiveSnapshotConfig(cameraId, token);
     if (!snapshotConfig?.url || !snapshotConfig.username || !snapshotConfig.password) {
       return res.status(404).send("Snapshot unavailable");
     }
