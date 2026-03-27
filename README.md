@@ -6,7 +6,7 @@ Windows CCTV gateway for Huchu ERP. It pulls RTSP streams from on-site cameras/N
 
 - `server.js`: Express gateway used by the ERP to configure MediaMTX paths, negotiate WebRTC, search NVR playback, and mint playback stream paths.
 - `mediamtx.yml`: Local MediaMTX config for on-demand RTSP ingestion and local playback.
-- `forward.bat`: FFmpeg relay publisher that forwards active local streams to `stream.pagka.dev`.
+- `forward.bat`: FFmpeg relay publisher that transcodes active local streams to browser-safe H.264/AAC and forwards them to `stream.pagka.dev`.
 - `package.json`: Node runtime dependencies for the gateway.
 
 ## Current Architecture
@@ -14,7 +14,7 @@ Windows CCTV gateway for Huchu ERP. It pulls RTSP streams from on-site cameras/N
 1. ERP requests a camera stream from the Windows gateway.
 2. `server.js` creates or refreshes a MediaMTX path that points at the camera RTSP URL.
 3. Local users watch through MediaMTX WebRTC on port `8889`.
-4. When the local path becomes ready, `forward.bat` starts FFmpeg and republishes the stream to the public relay at `stream.pagka.dev:8554`.
+4. When the local path becomes ready, `forward.bat` starts FFmpeg, converts the feed to H.264/AAC for compatibility, and republishes it to the public relay at `stream.pagka.dev:8554`.
 5. The relay exposes HLS at `https://stream.pagka.dev/<stream-path>/index.m3u8`.
 
 ## Playback Flow
@@ -102,6 +102,12 @@ Manual MediaMTX run:
 - `GATEWAY_KEY`: Shared secret expected by the ERP backend
 - `RELAY_HOST`: Public relay hostname, default `stream.pagka.dev`
 - `RELAY_PORT`: Public RTSP relay port, default `8554`
+- `RELAY_VIDEO_PRESET`: FFmpeg x264 preset for relay publishing, default `veryfast`
+- `RELAY_VIDEO_BITRATE`: Target relay video bitrate, default `1800k`
+- `RELAY_MAX_RATE`: Peak relay video bitrate, default `2200k`
+- `RELAY_BUFFER_SIZE`: FFmpeg video rate-control buffer, default `3600k`
+- `RELAY_GOP`: GOP/keyframe interval for relay output, default `50`
+- `RELAY_AUDIO_BITRATE`: AAC bitrate for relay audio, default `128k`
 - `FFMPEG_PATH`: Optional absolute path to `ffmpeg.exe` if it is not on `PATH`
 
 ## Gateway Playback APIs
@@ -158,4 +164,4 @@ When moving to a dedicated Windows box:
 
 - Local WebRTC can work even when public HLS is broken; the relay depends on `forward.bat`.
 - `forward.bat` uses an absolute FFmpeg path so the Windows service account can find FFmpeg reliably.
-- The current relay HLS output skips the G711 audio track, so public HLS is presently video-only.
+- The relay now transcodes browser-facing output to H.264 video with AAC audio for higher client compatibility than the raw H.265/G711 source.
