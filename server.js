@@ -7,6 +7,7 @@ const axios = require("axios");
 const cors = require("cors");
 const DigestFetchModule = require("digest-fetch");
 const { XMLParser } = require("fast-xml-parser");
+const { createHash, randomBytes } = require("node:crypto");
 
 const DigestFetch = DigestFetchModule.default || DigestFetchModule;
 
@@ -77,8 +78,98 @@ function encodeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
+function md5(value) {
+  return createHash("md5").update(value).digest("hex");
+}
+
+function stripQuotes(value) {
+  return value.replace(/^"|"$/g, "");
+}
+
+function parseDigestChallenge(header) {
+  const challenge = header.replace(/^Digest\s+/i, "");
+  const values = {};
+
+  for (const match of challenge.matchAll(/(\w+)=(".*?"|[^,]+)/g)) {
+    values[match[1]] = stripQuotes(match[2].trim());
+  }
+
+  return values;
+}
+
+async function requestWithDigestFallback(url, init, credentials) {
+  const basicAuthorization = Buffer.from(
+    `${credentials.username}:${credentials.password}`,
+  ).toString("base64");
+
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      Authorization: `Basic ${basicAuthorization}`,
+    },
+  });
+
+  if (response.status !== 401) {
+    return response;
+  }
+
+  const challenge = response.headers.get("www-authenticate");
+  if (!challenge?.toLowerCase().includes("digest")) {
+    return response;
+  }
+
+  const digest = parseDigestChallenge(challenge);
+  const requestUrl = new URL(url);
+  const requestUri = `${requestUrl.pathname}${requestUrl.search}`;
+  const nc = "00000001";
+  const cnonce = randomBytes(8).toString("hex");
+  const qop = digest.qop?.split(",")[0]?.trim() || "auth";
+  const ha1 = md5(`${credentials.username}:${digest.realm}:${credentials.password}`);
+  const ha2 = md5(`${(init.method || "GET").toUpperCase()}:${requestUri}`);
+  const responseHash = md5(
+    `${ha1}:${digest.nonce}:${nc}:${cnonce}:${qop}:${ha2}`,
+  );
+
+  const authorization = [
+    `Digest username="${credentials.username}"`,
+    `realm="${digest.realm}"`,
+    `nonce="${digest.nonce}"`,
+    `uri="${requestUri}"`,
+    `response="${responseHash}"`,
+    `qop=${qop}`,
+    `nc=${nc}`,
+    `cnonce="${cnonce}"`,
+    digest.opaque ? `opaque="${digest.opaque}"` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return fetch(url, {
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      Authorization: authorization,
+    },
+  });
+}
+
 function formatHikvisionTime(isoValue) {
   return new Date(isoValue).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function buildRecordTypeDescriptor(recordType) {
+  switch (String(recordType || "all").toLowerCase()) {
+    case "timing":
+    case "continuous":
+      return "recordType.meta.std-cgi.com/timing";
+    case "motion":
+      return "recordType.meta.std-cgi.com/motion";
+    case "alarm":
+      return "recordType.meta.std-cgi.com/alarm";
+    default:
+      return "//recordType.meta.std-cgi.com";
+  }
 }
 
 function buildPlaybackSearchXml({
@@ -91,7 +182,7 @@ function buildPlaybackSearchXml({
 }) {
   const trackId = `${channelNumber}01`;
   return `<?xml version="1.0" encoding="UTF-8"?>
-<CMSearchDescription>
+<CMSearchDescription version="1.0" xmlns="http://www.isapi.org/ver20/XMLSchema">
   <searchID>SEARCH-${Date.now()}</searchID>
   <trackIDList>
     <trackID>${trackId}</trackID>
@@ -105,7 +196,7 @@ function buildPlaybackSearchXml({
   <maxResults>${maxResults}</maxResults>
   <searchResultPostion>${searchPosition}</searchResultPostion>
   <metadataList>
-    <metadataDescriptor>${encodeXml(recordType)}</metadataDescriptor>
+    <metadataDescriptor>${encodeXml(buildRecordTypeDescriptor(recordType))}</metadataDescriptor>
   </metadataList>
 </CMSearchDescription>`;
 }
@@ -159,7 +250,6 @@ async function searchPlaybackClips({
   endTime,
   recordType,
 }) {
-  const client = new DigestFetch(nvr.username, nvr.password);
   const url = `http://${nvr.ipAddress}:${nvr.httpPort}/ISAPI/ContentMgmt/search`;
   const clips = [];
   let searchPosition = 0;
@@ -180,13 +270,18 @@ async function searchPlaybackClips({
       firstSearchXml = searchXml;
     }
 
-    const response = await client.fetch(url, {
+    const response = await requestWithDigestFallback(
+      url,
+      {
       method: "POST",
       headers: {
-        "Content-Type": "application/xml",
+        "Content-Type": "application/xml; charset=UTF-8",
+        Accept: "application/xml",
       },
       body: searchXml,
-    });
+      },
+      nvr,
+    );
 
     if (!response.ok) {
       const details = await response.text();
