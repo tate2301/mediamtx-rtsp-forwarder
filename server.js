@@ -254,6 +254,20 @@ async function fetchLiveRtspUrl(cameraId, token) {
   return response.data.rtspUrl;
 }
 
+async function fetchLiveSnapshotConfig(cameraId, token) {
+  const response = await axios.post(
+    `${ERP_URL}/api/cctv/streams/config`,
+    { cameraId, token },
+    {
+      headers: {
+        "x-gateway-key": GATEWAY_KEY,
+      },
+    },
+  );
+
+  return response.data.snapshotConfig;
+}
+
 async function fetchPlaybackRtspUrl(playbackRecordId, token) {
   const response = await axios.post(
     `${ERP_URL}/api/cctv/playback/config`,
@@ -458,6 +472,54 @@ app.post("/api/playback/session", async (req, res) => {
  * GET /health
  */
 app.get("/health", (req, res) => res.json({ status: "ok" }));
+
+/**
+ * GET /snapshot/:streamPath
+ * Compatibility fallback for clients that can't render the live stream codec.
+ */
+app.get("/snapshot/:streamPath", async (req, res) => {
+  try {
+    const { streamPath } = req.params;
+    const token = req.query.token;
+    if (!token) {
+      return res.status(401).send("Token Required");
+    }
+
+    const match = streamPath.match(/^camera-(.+)-(main|sub|third)$/);
+    if (!match) {
+      return res.status(400).send("Invalid path");
+    }
+
+    const [, cameraId] = match;
+    const snapshotConfig = await fetchLiveSnapshotConfig(cameraId, token);
+    if (!snapshotConfig?.url || !snapshotConfig.username || !snapshotConfig.password) {
+      return res.status(404).send("Snapshot unavailable");
+    }
+
+    const client = new DigestFetch(snapshotConfig.username, snapshotConfig.password);
+    const response = await client.fetch(snapshotConfig.url, {
+      method: "GET",
+      headers: {
+        Accept: "image/jpeg",
+      },
+    });
+
+    if (!response.ok) {
+      const details = await response.text();
+      return res
+        .status(response.status)
+        .send(details || `Snapshot request failed (${response.status})`);
+    }
+
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    const image = Buffer.from(await response.arrayBuffer());
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.send(image);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
 
 /**
  * Proxy HLS playlists and media assets through the gateway so the public edge
