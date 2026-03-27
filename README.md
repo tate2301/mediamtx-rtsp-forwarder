@@ -1,6 +1,6 @@
 # CCTV Server
 
-Windows CCTV gateway for Huchu ERP. It pulls RTSP streams from on-site cameras/NVRs, serves local WebRTC for browser viewing, forwards live streams to the public relay, and now supports server-driven playback discovery/session setup for public WHEP and HLS playback.
+Windows CCTV gateway for Huchu ERP. It pulls RTSP streams from on-site cameras/NVRs, serves local WebRTC and HLS for browser viewing, forwards live streams to the public relay, and supports server-driven playback discovery/session setup for public WHEP and HLS playback.
 
 ## What This Repo Contains
 
@@ -15,7 +15,7 @@ Windows CCTV gateway for Huchu ERP. It pulls RTSP streams from on-site cameras/N
 2. `server.js` creates or refreshes a MediaMTX path that points at the camera RTSP URL.
 3. Local users watch through MediaMTX WebRTC on port `8889`.
 4. When the local path becomes ready, `forward.bat` starts FFmpeg, converts the feed to H.264/AAC for compatibility, and republishes it to the public relay at `stream.pagka.dev:8554`.
-5. The relay exposes HLS at `https://stream.pagka.dev/<stream-path>/index.m3u8`.
+5. The public edge exposes HLS at `https://stream.pagka.dev/<stream-path>/index.m3u8` by proxying through the gateway to the local MediaMTX HLS port.
 
 ## Playback Flow
 
@@ -108,6 +108,7 @@ Manual MediaMTX run:
 - `ERP_URL`: ERP base URL, default `http://localhost:3000`
 - `MTX_API_URL`: MediaMTX API base URL, default `http://localhost:9997`
 - `MTX_WEBRTC_PORT`: Local MediaMTX WebRTC port, default `8889`
+- `MTX_HLS_PORT`: Local MediaMTX HLS port, default `8887`
 - `PORT`: Gateway port, default `8888`
 - `GATEWAY_KEY`: Shared secret expected by the ERP backend
 - `RELAY_HOST`: Public relay hostname, default `stream.pagka.dev`

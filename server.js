@@ -19,6 +19,7 @@ app.use(cors());
 const ERP_URL = process.env.ERP_URL || "http://localhost:3000";
 const MTX_API_URL = process.env.MTX_API_URL || "http://localhost:9997";
 const MTX_WEBRTC_PORT = process.env.MTX_WEBRTC_PORT || "8889";
+const MTX_HLS_PORT = process.env.MTX_HLS_PORT || "8887";
 const PORT = process.env.PORT || 8888;
 const GATEWAY_KEY = process.env.GATEWAY_KEY || "your-secret-key";
 const xmlParser = new XMLParser({
@@ -326,6 +327,50 @@ async function proxyWhepOffer(streamPath, offerSdp) {
   return response;
 }
 
+async function resolveStreamPathRtspUrl(streamPath, query) {
+  if (streamPath.startsWith("playback-")) {
+    return fetchPlaybackRtspUrlForSession({
+      streamPath,
+      token: query.token,
+      playbackSessionId: query.playbackSessionId,
+      seekAt: query.seekAt,
+    });
+  }
+
+  const match = streamPath.match(/^camera-(.+)-(main|sub|third)$/);
+  if (!match) {
+    throw new Error("Invalid path");
+  }
+
+  const [, cameraId] = match;
+  return fetchLiveRtspUrl(cameraId, query.token);
+}
+
+async function proxyHlsAsset(req, res, assetPath) {
+  const upstreamUrl = `http://127.0.0.1:${MTX_HLS_PORT}${assetPath}`;
+  const upstreamResponse = await axios.get(upstreamUrl, {
+    responseType: "stream",
+    validateStatus: () => true,
+    headers: {
+      ...(req.headers.range ? { range: req.headers.range } : {}),
+    },
+  });
+
+  res.status(upstreamResponse.status);
+  Object.entries(upstreamResponse.headers).forEach(([header, value]) => {
+    if (value === undefined) return;
+    if (header.toLowerCase() === "transfer-encoding") return;
+    res.setHeader(header, value);
+  });
+
+  if (req.method === "HEAD") {
+    res.end();
+    return;
+  }
+
+  upstreamResponse.data.pipe(res);
+}
+
 /**
  * POST /api/stream/webrtc
  */
@@ -415,6 +460,52 @@ app.post("/api/playback/session", async (req, res) => {
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
 /**
+ * Proxy HLS playlists and media assets through the gateway so the public edge
+ * only needs to reach the gateway port on the private box.
+ */
+app.head(/^\/([^/]+)\/(.+)$/, async (req, res, next) => {
+  try {
+    const [, streamPath, assetName] = req.path.match(/^\/([^/]+)\/(.+)$/) || [];
+    if (!streamPath || !assetName) {
+      return next();
+    }
+    if (["api", "whep", "playback", "health"].includes(streamPath)) {
+      return next();
+    }
+
+    if (assetName === "index.m3u8" && req.query.token) {
+      const rtspUrl = await resolveStreamPathRtspUrl(streamPath, req.query);
+      await syncMtxPath(streamPath, rtspUrl);
+    }
+
+    await proxyHlsAsset(req, res, req.originalUrl);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+app.get(/^\/([^/]+)\/(.+)$/, async (req, res, next) => {
+  try {
+    const [, streamPath, assetName] = req.path.match(/^\/([^/]+)\/(.+)$/) || [];
+    if (!streamPath || !assetName) {
+      return next();
+    }
+    if (["api", "whep", "playback", "health"].includes(streamPath)) {
+      return next();
+    }
+
+    if (assetName === "index.m3u8" && req.query.token) {
+      const rtspUrl = await resolveStreamPathRtspUrl(streamPath, req.query);
+      await syncMtxPath(streamPath, rtspUrl);
+    }
+
+    await proxyHlsAsset(req, res, req.originalUrl);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+/**
  * GET /whep/:streamPath
  */
 app.get("/whep/:streamPath", async (req, res) => {
@@ -423,21 +514,7 @@ app.get("/whep/:streamPath", async (req, res) => {
     const token = req.query.token;
     if (!token) return res.status(401).send("Token Required");
 
-    let rtspUrl;
-    if (streamPath.startsWith("playback-")) {
-      rtspUrl = await fetchPlaybackRtspUrlForSession({
-        streamPath,
-        token,
-        playbackSessionId: req.query.playbackSessionId,
-        seekAt: req.query.seekAt,
-      });
-    } else {
-      const match = streamPath.match(/^camera-(.+)-(main|sub|third)$/);
-      if (!match) return res.status(400).send("Invalid path");
-      const [, cameraId] = match;
-      rtspUrl = await fetchLiveRtspUrl(cameraId, token);
-    }
-
+    const rtspUrl = await resolveStreamPathRtspUrl(streamPath, req.query);
     await syncMtxPath(streamPath, rtspUrl);
 
     const publicBaseUrl = getPublicBaseUrl(req);
@@ -456,21 +533,7 @@ app.post("/whep/:streamPath", async (req, res) => {
     const token = req.query.token;
     if (!token) return res.status(401).json({ error: "Token Required" });
 
-    let rtspUrl;
-    if (streamPath.startsWith("playback-")) {
-      rtspUrl = await fetchPlaybackRtspUrlForSession({
-        streamPath,
-        token,
-        playbackSessionId: req.query.playbackSessionId,
-        seekAt: req.query.seekAt,
-      });
-    } else {
-      const match = streamPath.match(/^camera-(.+)-(main|sub|third)$/);
-      if (!match) return res.status(400).json({ error: "Invalid path" });
-      const [, cameraId] = match;
-      rtspUrl = await fetchLiveRtspUrl(cameraId, token);
-    }
-
+    const rtspUrl = await resolveStreamPathRtspUrl(streamPath, req.query);
     await syncMtxPath(streamPath, rtspUrl);
 
     const mtxResponse = await proxyWhepOffer(streamPath, req.body);
