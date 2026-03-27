@@ -366,7 +366,7 @@ async function fetchLiveSnapshotConfig(cameraId, token) {
 async function fetchOverviewRtspUrl(nvrId, token) {
   const response = await axios.post(
     `${ERP_URL}/api/cctv/overview-stream/config`,
-    { nvrId, token },
+    { nvrId: nvrId || undefined, token },
     {
       headers: {
         "x-gateway-key": GATEWAY_KEY,
@@ -380,7 +380,7 @@ async function fetchOverviewRtspUrl(nvrId, token) {
 async function fetchOverviewSnapshotConfig(nvrId, token) {
   const response = await axios.post(
     `${ERP_URL}/api/cctv/overview-stream/config`,
-    { nvrId, token },
+    { nvrId: nvrId || undefined, token },
     {
       headers: {
         "x-gateway-key": GATEWAY_KEY,
@@ -474,7 +474,7 @@ async function resolveStreamPathRtspUrl(streamPath, query) {
     });
   }
 
-  const overviewMatch = streamPath.match(/^overview-(.+)$/);
+  const overviewMatch = streamPath.match(/^overview(?:-(.+))?$/);
   if (overviewMatch) {
     const [, nvrId] = overviewMatch;
     return fetchOverviewRtspUrl(nvrId, query.token);
@@ -615,7 +615,7 @@ app.get("/snapshot/:streamPath", async (req, res) => {
     }
 
     let snapshotConfig = null;
-    const overviewMatch = streamPath.match(/^overview-(.+)$/);
+    const overviewMatch = streamPath.match(/^overview(?:-(.+))?$/);
     if (overviewMatch) {
       const [, nvrId] = overviewMatch;
       snapshotConfig = await fetchOverviewSnapshotConfig(nvrId, token);
