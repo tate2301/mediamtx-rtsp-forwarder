@@ -1,5 +1,6 @@
 @echo off
 setlocal
+call "%~dp0load-env.cmd"
 
 set LOGFILE=C:\cctv-server\forward-to-relay.log
 echo ================================================== >> "%LOGFILE%"
@@ -7,9 +8,18 @@ echo [%date% %time%] START >> "%LOGFILE%"
 echo MTX_PATH=%MTX_PATH% >> "%LOGFILE%"
 echo RTSP_PORT=%RTSP_PORT% >> "%LOGFILE%"
 
-set FFMPEG=C:\Users\Atipamara\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin\ffmpeg.exe
-set RELAY_HOST=stream.pagka.dev
-set RELAY_PORT=8554
+if defined FFMPEG_PATH (
+  set "FFMPEG=%FFMPEG_PATH%"
+) else (
+  set "FFMPEG="
+  for /f "delims=" %%I in ('where ffmpeg 2^>nul') do (
+    if not defined FFMPEG set "FFMPEG=%%I"
+  )
+  if not defined FFMPEG set "FFMPEG=ffmpeg"
+)
+
+if not defined RELAY_HOST set "RELAY_HOST=stream.pagka.dev"
+if not defined RELAY_PORT set "RELAY_PORT=8554"
 
 echo Input URL: rtsp://127.0.0.1:%RTSP_PORT%/%MTX_PATH% >> "%LOGFILE%"
 echo Output URL: rtsp://%RELAY_HOST%:%RELAY_PORT%/%MTX_PATH% >> "%LOGFILE%"

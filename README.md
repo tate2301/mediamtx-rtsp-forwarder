@@ -42,17 +42,55 @@ Windows CCTV gateway for Huchu ERP. It pulls RTSP streams from on-site cameras/N
 - Droplet path: `/opt/cctv-relay`
 - Relay services: Docker MediaMTX behind Nginx with Let's Encrypt TLS
 
-## Local Setup
+## Dedicated Machine Setup
 
-1. Install Node dependencies:
+Use this when moving the local box to a dedicated Windows machine.
+
+1. Copy the whole folder to `C:\cctv-server`.
+2. Install:
+   - Node.js
+   - `pnpm`
+   - FFmpeg
+   - Tailscale
+3. Sign in to Tailscale on the new machine and confirm it can reach the tailnet.
+4. Copy `.env.example` to `.env` and set at least:
 ```powershell
-pnpm install
+ERP_URL=https://acme.apps.pagka.dev
+GATEWAY_KEY=your-shared-key
 ```
-2. Make sure FFmpeg is installed at the path referenced in `forward.bat`.
-3. Start MediaMTX with `mediamtx.exe`.
-4. Start the gateway:
+5. Run the bootstrap script from an elevated PowerShell window:
 ```powershell
-node server.js
+Set-ExecutionPolicy Bypass -Scope Process -Force
+.\scripts\bootstrap.ps1
+```
+
+The bootstrap script will:
+- run `pnpm install`
+- validate FFmpeg
+- install the gateway as a Windows service with `nssm.exe`
+- install MediaMTX as a Windows service with `nssm.exe`
+- start both services
+
+## Quick Commands
+
+Bootstrap or refresh services:
+```powershell
+.\scripts\bootstrap.ps1
+```
+
+Remove services:
+```powershell
+.\scripts\remove-services.ps1
+```
+
+Manual gateway run:
+```powershell
+.\run-gateway.cmd
+```
+
+Manual MediaMTX run:
+```powershell
+.\run-mediamtx.cmd
 ```
 
 ## Required Environment
@@ -62,6 +100,9 @@ node server.js
 - `MTX_WEBRTC_PORT`: Local MediaMTX WebRTC port, default `8889`
 - `PORT`: Gateway port, default `8888`
 - `GATEWAY_KEY`: Shared secret expected by the ERP backend
+- `RELAY_HOST`: Public relay hostname, default `stream.pagka.dev`
+- `RELAY_PORT`: Public RTSP relay port, default `8554`
+- `FFMPEG_PATH`: Optional absolute path to `ffmpeg.exe` if it is not on `PATH`
 
 ## Gateway Playback APIs
 
@@ -98,6 +139,20 @@ Get-Content C:\cctv-server\mediamtx.log -Tail 100
 ```text
 https://stream.pagka.dev/<stream-path>/index.m3u8
 ```
+
+## Machine Move Checklist
+
+When moving to a dedicated Windows box:
+
+1. Install Tailscale and verify the machine is signed in.
+2. Copy this repo to `C:\cctv-server`.
+3. Make sure `ffmpeg.exe` is on `PATH` or set `FFMPEG_PATH` in `.env`.
+4. Set `ERP_URL` and `GATEWAY_KEY` in `.env`.
+5. Run [`bootstrap.ps1`](C:/cctv-server/scripts/bootstrap.ps1) as Administrator.
+6. Confirm:
+   - `http://127.0.0.1:8888/health`
+   - `http://127.0.0.1:8889/`
+   - public playback from the ERP
 
 ## Known Notes
 
